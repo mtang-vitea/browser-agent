@@ -8,3 +8,5 @@ screenshots/
 dist/
 *.egg-info/
 .python-version
+.browser-pid
+.browser-server.log

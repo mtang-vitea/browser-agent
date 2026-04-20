@@ -1,64 +1,63 @@
 # Architecture
 
-Browser Agent is a two-layer system: a **browser agent** that sees and interacts with web pages via screenshots, and a **coder agent** that reads/writes code in local repositories.
+Browser Agent is a **tool for coding agents** — it provides a persistent browser that Claude Code or Codex can drive via CLI commands and observe via screenshots.
+
+The coding agent is the intelligence layer. This project provides no AI of its own; it's pure browser automation infrastructure.
+
+## How It Works
+
+```
+Coding Agent (Claude Code / Codex)
+  │
+  ├── runs CLI commands ──→  src/cli.py ──→ TCP ──→ src/server.py
+  │                                                      │
+  ├── reads screenshot files ←── screenshots/latest.png ←┘
+  │
+  └── decides what to do next (click, type, navigate, etc.)
+```
+
+1. The agent starts the browser server (`uv run python -m src.cli start`)
+2. The agent sends commands (`navigate`, `click`, `type`, `screenshot`, etc.)
+3. For `screenshot`, the server saves a PNG to disk and returns the file path
+4. The agent reads the screenshot with its built-in vision to understand the page
+5. The agent decides what to do next and sends the appropriate command
+6. When done, the agent stops the server (`uv run python -m src.cli stop`)
 
 ## Components
 
-### Browser Layer (`src/browser.py`, `src/actions.py`)
+### Browser Server (`src/server.py`)
 
-Playwright wrapper that provides action primitives to the AI:
+A background TCP server (127.0.0.1:9223) that manages a persistent Playwright Chromium browser. Accepts JSON commands, executes them against the browser, and returns JSON results.
 
-- `navigate(url)` — load a URL
-- `click(x, y)` — click at pixel coordinates identified from the screenshot
-- `type_text(text)` — type into the focused element
-- `press_key(key)` — keyboard shortcuts (Enter, Tab, Meta+a, etc.)
-- `scroll(direction, amount)` — scroll the page
-- `wait(seconds)` — pause for loading
-- `extract_data(data)` — capture structured JSON from the page for downstream use
-- `done(summary)` — signal task completion
+The server is long-lived — it stays running between CLI calls so the browser session (cookies, logins, page state) persists across commands.
 
-Screenshots are captured as base64 JPEG and sent to Claude's vision API each step.
+### CLI Client (`src/cli.py`)
 
-### Agent Loop (`src/agent.py`)
+Thin client that sends commands to the server. Each subcommand maps to one browser action:
 
-The core loop that drives the browser:
+| Command | Description |
+|---|---|
+| `start [--headless]` | Launch the browser server in the background |
+| `navigate <url>` | Go to a URL |
+| `click <x> <y>` | Click at pixel coordinates |
+| `type <text> [--enter]` | Type text into the focused element |
+| `key <key>` | Press a key or combo (Enter, Tab, Meta+a) |
+| `scroll <up\|down> [--amount N]` | Scroll the page |
+| `screenshot` | Save screenshot to disk, print the file path |
+| `wait <seconds>` | Wait (useful for page loads) |
+| `url` | Print the current page URL |
+| `title` | Print the current page title |
+| `status` | Check if the server is running |
+| `stop` | Shut down the browser and server |
 
-1. Take a screenshot of the current page
-2. Send screenshot + conversation history to Claude
-3. Claude returns tool calls (click, type, navigate, etc.)
-4. Execute the tool calls against the browser
-5. Repeat until `done` is called or max steps (50) reached
+### Browser Wrapper (`src/browser.py`)
 
-Returns an `AgentResult` with a summary string and a list of any structured data captured via `extract_data`.
-
-### Coder Agent (`src/coder.py`)
-
-A separate Claude agent loop for code modifications. Given a local repo path and a task description, it uses tools to:
-
-- `read_file` / `write_file` — read and modify files
-- `list_directory` — explore the repo structure
-- `search_code` — grep for patterns
-- `run_command` — run shell commands (install deps, run tests, etc.)
-
-The coder works directly on local repos — no cloning. Repos are resolved from a base directory via `--repos-dir`.
-
-### Tasks (`src/tasks/`)
-
-Orchestrators that combine the browser and coder agents into multi-phase workflows. Each task is a self-contained async function.
-
-### CLI (`src/cli.py`)
-
-Entry point with subcommands:
-
-- `run <task>` — free-form browser automation
-- `fix-vulns` — the vulnerability-fixing pipeline (see [fix-vulns task docs](./fix-vulns-task.md))
-
-To add a new subcommand, see [adding a task](./adding-a-task.md).
+Playwright wrapper used internally by the server. Handles viewport configuration, screenshot numbering, and action execution.
 
 ## Design Decisions
 
-- **Headed browser by default** — the user can watch and intervene (pass `--headless` to disable)
-- **Local repos only** — repos are found on disk via `--repos-dir`, no cloning
-- **Separate agent loops** — browser agent and coder agent are independent; tasks orchestrate them
-- **Step limits** — browser agent caps at 50 steps, coder at 30, to prevent runaway execution
-- **JPEG screenshots** — quality=75 keeps token usage reasonable while remaining legible to Claude's vision
+- **No AI dependencies** — no Anthropic SDK, no OpenAI SDK. The coding agent running this IS the AI.
+- **CLI-driven** — every action is a simple shell command the agent can run via Bash.
+- **Screenshots to disk** — saved as PNG files the agent reads with its built-in vision. Numbered sequentially (`step_001.png`, `step_002.png`, ...) plus a `latest.png` symlink.
+- **Persistent browser** — the TCP server keeps the browser alive between commands so login sessions and page state carry over.
+- **Headed by default** — the user can watch what's happening. Pass `--headless` to `start` for background execution.

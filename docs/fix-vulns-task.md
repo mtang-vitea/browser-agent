@@ -1,75 +1,72 @@
 # Fix Vulnerabilities Task
 
-Reads a vulnerability report from Slack, then fixes each vulnerability in-place on local repos and opens PRs.
+Read the latest vulnerability report from Slack, then fix each vulnerability in the local repos and open PRs.
 
-## Usage
+## Workflow
+
+### Phase 1: Read the Slack vulnerability report
 
 ```bash
-uv run python -m src.cli fix-vulns --repos-dir ~/Code
-uv run python -m src.cli fix-vulns --repos-dir ~/Code --model claude-sonnet-4-6
-uv run python -m src.cli fix-vulns --repos-dir ~/Code --headless
+# Start the browser
+uv run python -m src.cli start
+
+# Go to Slack
+uv run python -m src.cli navigate "https://app.slack.com"
+uv run python -m src.cli screenshot
+# → Read the screenshot. If login is needed, wait for the user to log in manually.
+
+# Find the #vulnerabilities channel (Ctrl+K to search)
+uv run python -m src.cli key "Meta+k"
+uv run python -m src.cli screenshot
+uv run python -m src.cli type "vulnerabilities" --enter
+uv run python -m src.cli wait 2
+uv run python -m src.cli screenshot
+
+# Read the latest message from Vuln Scanner
+# Scroll as needed to read the full message
+uv run python -m src.cli screenshot
+uv run python -m src.cli scroll down
+uv run python -m src.cli screenshot
 ```
 
-### Required flags
+After reading the message, extract the vulnerability details:
+- Repository name (e.g. `vitea-ai/backend`)
+- Package name and versions (current → fixed)
+- CVE identifier
+- Severity
 
-- `--repos-dir` — base directory where repositories live on your machine. The task resolves repo names from the Slack message to local paths by searching this directory. For example, if Slack says `vitea-ai/backend`, it looks for `~/Code/backend` or `~/Code/vitea-ai/backend`.
+### Phase 2: Fix each vulnerability
 
-### Optional flags
+For each repo listed in the report:
 
-- `--headless` — run the browser without a visible window
-- `--model` — Claude model to use (default: `claude-sonnet-4-6`)
+1. **Find the repo locally** — check `~/Code/{repo-name}` or `~/Code/{org}/{repo-name}`
+2. **Create a fix branch:**
+   ```bash
+   cd ~/Code/{repo-name}
+   git checkout -b fix/{cve-or-package-name}
+   ```
+3. **Fix the vulnerability** — find the dependency file (`package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, etc.), upgrade the affected package to the fixed version, and run the appropriate install/lock command
+4. **Verify** — run tests if available
+5. **Commit, push, and open a PR:**
+   ```bash
+   git add -A
+   git commit -m "fix: upgrade {package} to {fixed_version} ({cve})"
+   git push -u origin fix/{cve-or-package-name}
+   gh pr create --title "fix: {cve} — upgrade {package}" --body "## Vulnerability Fix\n\n**CVE:** {cve}\n**Package:** {package}\n**Severity:** {severity}\n**Version:** {current} → {fixed}\n"
+   ```
+6. **Return to main** — `git checkout main`
 
-## How It Works
+Repeat for each vulnerability, one repo at a time.
 
-### Phase 1: Read Slack
+### Phase 3: Clean up
 
-The browser agent:
-
-1. Opens `https://app.slack.com`
-2. Navigates to the `#vulnerabilities` channel (via Ctrl+K search)
-3. Finds the most recent message from **Vuln Scanner**
-4. Extracts structured vulnerability data using `extract_data`:
-
-```json
-{
-  "vulnerabilities": [
-    {
-      "repo": "org/repo-name",
-      "package": "affected-package",
-      "current_version": "x.y.z",
-      "fixed_version": "a.b.c",
-      "severity": "critical|high|medium|low",
-      "cve": "CVE-XXXX-XXXXX",
-      "description": "Brief description"
-    }
-  ]
-}
+```bash
+# Stop the browser when done with Slack
+uv run python -m src.cli stop
 ```
-
-If the user is not logged into Slack, the agent will pause and describe the login page so the user can authenticate manually.
-
-### Phase 2: Fix Each Vulnerability
-
-For each vulnerability, the task:
-
-1. **Resolves the local repo path** — looks for `{repos_dir}/{repo_name}` and `{repos_dir}/{org}/{repo_name}`
-2. **Creates a fix branch** — `fix/{cve-or-package-name}` branched from the current HEAD
-3. **Runs the coder agent** — Claude analyzes the repo, finds the dependency file, upgrades the package, runs install/lock commands, and verifies with tests
-4. **Commits and pushes** — stages all changes, commits with a descriptive message
-5. **Opens a PR** — via `gh pr create` with CVE, severity, description, and change summary
-
-### Repo Resolution
-
-Given a repo identifier like `vitea-ai/backend` and `--repos-dir ~/Code`, the task tries these paths in order:
-
-1. `~/Code/backend` (repo name only)
-2. `~/Code/vitea-ai/backend` (org/repo-name)
-
-If neither exists, the vulnerability is skipped with a warning.
 
 ## Prerequisites
 
-- Logged into Slack in a Chromium-compatible browser (or be ready to log in when prompted)
+- Logged into Slack in the browser (or ready to log in when prompted)
 - `gh` CLI authenticated with push access to the target repos
-- Local clones of the repos that may appear in vulnerability reports
-- `ANTHROPIC_API_KEY` set in environment or `.env`
+- Local clones of the repos at `~/Code/`

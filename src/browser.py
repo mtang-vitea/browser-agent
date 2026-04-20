@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from pathlib import Path
 
 from playwright.async_api import async_playwright, Browser, Page
@@ -16,6 +15,7 @@ class BrowserSession:
         self._playwright = None
         self._browser: Browser | None = None
         self._page: Page | None = None
+        self._screenshot_counter = 0
 
     async def start(self) -> None:
         SCREENSHOTS_DIR.mkdir(exist_ok=True)
@@ -36,8 +36,12 @@ class BrowserSession:
         return self._page
 
     async def screenshot(self) -> str:
-        raw = await self.page.screenshot(type="jpeg", quality=75)
-        return base64.b64encode(raw).decode()
+        self._screenshot_counter += 1
+        path = SCREENSHOTS_DIR / f"step_{self._screenshot_counter:03d}.png"
+        await self.page.screenshot(path=str(path))
+        latest = SCREENSHOTS_DIR / "latest.png"
+        await self.page.screenshot(path=str(latest))
+        return str(path.resolve())
 
     async def navigate(self, url: str) -> str:
         await self.page.goto(url, wait_until="domcontentloaded", timeout=15000)

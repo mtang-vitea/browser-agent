@@ -1,6 +1,6 @@
 # Browser Agent
 
-AI-powered browser automation using Claude's vision and Playwright.
+Browser automation server for coding agents. You drive the browser via CLI commands and read screenshots with your vision to decide what to do.
 
 > **Dual-agent repo**: This project uses both `CLAUDE.md` (Claude Code) and `AGENTS.md` (Codex). They share documentation via `docs/`. **When updating either file, update the other to match.** When updating shared docs in `docs/`, no sync is needed — both files reference them.
 
@@ -9,33 +9,48 @@ AI-powered browser automation using Claude's vision and Playwright.
 This project uses **uv** — not pip, not poetry, not conda.
 
 - Install deps: `uv sync`
-- Run anything: `uv run python -m src.cli ...` or `uv run browser-agent ...`
+- Run anything: `uv run python -m src.cli ...`
 - Add a dependency: `uv add <package>`
 - Never use bare `python` or `pip install` — always go through `uv run` / `uv add`
+
+## Browser Commands
+
+All commands: `uv run python -m src.cli <command>`
+
+```bash
+start [--headless]      # Launch browser server
+navigate <url>          # Go to URL
+click <x> <y>           # Click at coordinates
+type <text> [--enter]   # Type text
+key <key>               # Press key (Enter, Tab, Meta+k, etc.)
+scroll <up|down>        # Scroll page
+screenshot              # Take screenshot — read the printed path with your vision
+wait <seconds>          # Wait for page load
+url                     # Print current URL
+title                   # Print current page title
+status                  # Check if server is running
+stop                    # Shut down browser
+```
+
+## Workflow
+
+1. `uv run python -m src.cli start` — launch the browser
+2. `uv run python -m src.cli navigate "https://..."` — go somewhere
+3. `uv run python -m src.cli screenshot` — take a screenshot, then **read the file** to see the page
+4. Decide what to click/type based on the screenshot
+5. Repeat 2–4 until the task is done
+6. `uv run python -m src.cli stop` — shut down
 
 ## Docs
 
 - [docs/setup.md](docs/setup.md) — installation and environment setup
-- [docs/architecture.md](docs/architecture.md) — codebase structure, components, design decisions
-- [docs/fix-vulns-task.md](docs/fix-vulns-task.md) — the fix-vulns Slack→code→PR pipeline
+- [docs/architecture.md](docs/architecture.md) — how the server and CLI work
+- [docs/fix-vulns-task.md](docs/fix-vulns-task.md) — task: read Slack vulns, fix repos, open PRs
 - [docs/adding-a-task.md](docs/adding-a-task.md) — how to add a new task
-
-## Quick Reference
-
-```bash
-# Setup
-uv sync && uv run playwright install chromium
-
-# Free-form browser task
-uv run python -m src.cli run "Go to github.com and check my notifications"
-
-# Fix vulns from Slack
-uv run python -m src.cli fix-vulns --repos-dir ~/Code
-```
 
 ## Conventions
 
-- Browser agent and coder agent are separate loops — tasks in `src/tasks/` orchestrate them
-- Repos are always local (resolved via `--repos-dir`), never cloned
-- `extract_data` tool captures structured JSON from browser sessions for downstream use
-- Browser runs headed by default so the user can watch; pass `--headless` to disable
+- **No AI APIs** — you are the AI. This project is pure browser automation tooling.
+- Repos are always local — never clone, work on existing checkouts
+- Screenshot at every decision point so you can see the page
+- Browser runs headed by default so the user can watch; pass `--headless` to `start` to disable
