@@ -84,6 +84,20 @@ TOOLS = [
         },
     },
     {
+        "name": "extract_data",
+        "description": "Extract and store structured data from the current page. Use this to capture information you've read (e.g. vulnerability details, message contents) before calling done.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "description": "Structured data extracted from the page",
+                },
+            },
+            "required": ["data"],
+        },
+    },
+    {
         "name": "done",
         "description": "Signal that the task is complete. Provide a summary of what was accomplished.",
         "input_schema": {

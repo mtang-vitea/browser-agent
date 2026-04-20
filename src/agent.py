@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import anthropic
 
 from .actions import TOOLS
@@ -14,17 +16,30 @@ Guidelines:
 - Click on specific coordinates you can see in the screenshot.
 - If a page is loading, use the wait tool.
 - If you need to scroll to see more content, use the scroll tool.
+- Use extract_data to capture structured information you've read from the page before calling done.
 - When the task is complete, call the done tool with a summary.
 - If you get stuck, try a different approach rather than repeating the same action.
 - For login pages, describe what you see and ask the user to log in manually if credentials are needed."""
 
 
-async def run(task: str, headless: bool = False, model: str = "claude-sonnet-4-6") -> str:
+@dataclass
+class AgentResult:
+    summary: str
+    extracted_data: list[dict] = field(default_factory=list)
+
+
+async def run(
+    task: str,
+    headless: bool = False,
+    model: str = "claude-sonnet-4-6",
+    system_prompt: str | None = None,
+) -> AgentResult:
     client = anthropic.Anthropic()
     browser = BrowserSession(headless=headless)
     await browser.start()
 
     messages = [{"role": "user", "content": task}]
+    extracted_data: list[dict] = []
 
     try:
         for step in range(MAX_STEPS):
@@ -66,7 +81,7 @@ async def run(task: str, headless: bool = False, model: str = "claude-sonnet-4-6
             response = client.messages.create(
                 model=model,
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=system_prompt or SYSTEM_PROMPT,
                 tools=TOOLS,
                 messages=messages,
             )
@@ -96,6 +111,17 @@ async def run(task: str, headless: bool = False, model: str = "claude-sonnet-4-6
                         )
                         break
 
+                    if name == "extract_data":
+                        extracted_data.append(args["data"])
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": "Data extracted and stored.",
+                            }
+                        )
+                        continue
+
                     result = await _execute(browser, name, args)
                     print(f"Result: {result}")
                     tool_results.append(
@@ -108,7 +134,7 @@ async def run(task: str, headless: bool = False, model: str = "claude-sonnet-4-6
 
             if done_summary:
                 print(f"\n=== Task Complete ===\n{done_summary}")
-                return done_summary
+                return AgentResult(summary=done_summary, extracted_data=extracted_data)
 
             if tool_results:
                 messages.append({"role": "user", "content": tool_results})
@@ -117,7 +143,10 @@ async def run(task: str, headless: bool = False, model: str = "claude-sonnet-4-6
                 print("\nAgent stopped without calling done.")
                 break
 
-        return "Reached maximum steps without completing the task."
+        return AgentResult(
+            summary="Reached maximum steps without completing the task.",
+            extracted_data=extracted_data,
+        )
     finally:
         await browser.stop()
 
