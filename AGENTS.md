@@ -2,7 +2,7 @@
 
 AI-powered browser automation using Claude's vision and Playwright.
 
-> **Dual-agent repo**: This project uses both `CLAUDE.md` (Claude Code) and `AGENTS.md` (Codex). They share documentation via `docs/`. **When updating either file, update the other to match.** When updating shared docs in `docs/`, no sync is needed — both files reference them.
+> **Dual-agent repo**: This project uses both `AGENTS.md` (Codex) and `CLAUDE.md` (Claude Code). They share documentation via `docs/`. **When updating either file, update the other to match.** When updating shared docs in `docs/`, no sync is needed — both files reference them.
 
 ## Docs
 

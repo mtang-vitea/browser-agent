@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
 
 from ..agent import run as run_browser_agent
 from ..coder import fix_vulnerability
@@ -35,10 +34,27 @@ Steps:
 Be thorough — capture every vulnerability mentioned in the message."""
 
 
+def _resolve_repo_path(repos_dir: str, repo_identifier: str) -> str | None:
+    """Find a repo on disk given a name like 'org/repo' or just 'repo'."""
+    parts = repo_identifier.strip().split("/")
+    repo_name = parts[-1]
+
+    candidates = [
+        os.path.join(repos_dir, repo_name),
+        os.path.join(repos_dir, *parts),
+    ]
+
+    for candidate in candidates:
+        if os.path.isdir(os.path.join(candidate, ".git")):
+            return candidate
+
+    return None
+
+
 async def run_fix_vulns(
+    repos_dir: str,
     headless: bool = False,
     model: str = "claude-sonnet-4-6",
-    github_org: str | None = None,
 ) -> None:
     print("=" * 60)
     print("PHASE 1: Reading vulnerability report from Slack")
@@ -63,6 +79,8 @@ async def run_fix_vulns(
         print(f"  {i}. [{v.get('severity', '?').upper()}] {v.get('repo', '?')} — "
               f"{v.get('package', '?')} {v.get('cve', '')}")
 
+    print(f"\nResolving repos from: {repos_dir}")
+
     print("\n" + "=" * 60)
     print("PHASE 2: Fixing vulnerabilities")
     print("=" * 60)
@@ -82,59 +100,61 @@ async def run_fix_vulns(
         print(f"  Severity: {vuln.get('severity', 'unknown')}")
         print(f"{'—' * 40}")
 
-        clone_url = repo if "/" not in repo or repo.startswith("http") else f"https://github.com/{repo}.git"
+        repo_path = _resolve_repo_path(repos_dir, repo)
+        if not repo_path:
+            print(f"  Repo not found locally. Searched:")
+            parts = repo.split("/")
+            print(f"    - {os.path.join(repos_dir, parts[-1])}")
+            if len(parts) > 1:
+                print(f"    - {os.path.join(repos_dir, *parts)}")
+            print(f"  Skipping.")
+            continue
 
-        with tempfile.TemporaryDirectory(prefix="vuln-fix-") as tmpdir:
-            repo_path = os.path.join(tmpdir, repo.split("/")[-1])
+        print(f"  Found at: {repo_path}")
 
-            print(f"  Cloning {clone_url}...")
-            clone_result = subprocess.run(
-                ["git", "clone", "--depth=1", clone_url, repo_path],
-                capture_output=True, text=True, timeout=60,
-            )
-            if clone_result.returncode != 0:
-                print(f"  Failed to clone: {clone_result.stderr}")
-                continue
+        branch_name = f"fix/{vuln.get('cve', vuln.get('package', 'vuln')).lower().replace(' ', '-')}"
 
-            vuln_desc = _format_vuln_description(vuln)
+        print(f"  Creating branch: {branch_name}")
+        _run_git(repo_path, ["checkout", "-b", branch_name])
 
-            print(f"  Running coder agent...")
-            fix_summary = fix_vulnerability(
-                repo_path=repo_path,
-                vuln_description=vuln_desc,
-                model=model,
-            )
+        vuln_desc = _format_vuln_description(vuln)
 
-            branch_name = f"fix/{vuln.get('cve', vuln.get('package', 'vuln')).lower().replace(' ', '-')}"
+        print(f"  Running coder agent...")
+        fix_summary = fix_vulnerability(
+            repo_path=repo_path,
+            vuln_description=vuln_desc,
+            model=model,
+        )
 
-            has_changes = subprocess.run(
-                ["git", "diff", "--quiet"], cwd=repo_path, capture_output=True
-            ).returncode != 0
+        has_changes = subprocess.run(
+            ["git", "diff", "--quiet"], cwd=repo_path, capture_output=True
+        ).returncode != 0
 
-            has_staged = subprocess.run(
-                ["git", "diff", "--cached", "--quiet"], cwd=repo_path, capture_output=True
-            ).returncode != 0
+        has_staged = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=repo_path, capture_output=True
+        ).returncode != 0
 
-            has_untracked = bool(subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard"],
-                cwd=repo_path, capture_output=True, text=True
-            ).stdout.strip())
+        has_untracked = bool(subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path, capture_output=True, text=True
+        ).stdout.strip())
 
-            if not (has_changes or has_staged or has_untracked):
-                print(f"  No changes detected — skipping PR creation")
-                continue
+        if not (has_changes or has_staged or has_untracked):
+            print(f"  No changes detected — skipping PR creation")
+            _run_git(repo_path, ["checkout", "-"])
+            _run_git(repo_path, ["branch", "-D", branch_name])
+            continue
 
-            print(f"  Creating branch and PR...")
-            _run_git(repo_path, ["checkout", "-b", branch_name])
-            _run_git(repo_path, ["add", "-A"])
-            _run_git(repo_path, [
-                "commit", "-m",
-                f"fix: {vuln.get('package', 'dependency')} vulnerability ({vuln.get('cve', 'security fix')})\n\n{fix_summary}"
-            ])
-            _run_git(repo_path, ["push", "-u", "origin", branch_name])
+        print(f"  Committing and pushing...")
+        _run_git(repo_path, ["add", "-A"])
+        _run_git(repo_path, [
+            "commit", "-m",
+            f"fix: {vuln.get('package', 'dependency')} vulnerability ({vuln.get('cve', 'security fix')})\n\n{fix_summary}"
+        ])
+        _run_git(repo_path, ["push", "-u", "origin", branch_name])
 
-            pr_title = f"fix: {vuln.get('cve', 'Security fix')} — upgrade {vuln.get('package', 'dependency')}"
-            pr_body = f"""## Vulnerability Fix
+        pr_title = f"fix: {vuln.get('cve', 'Security fix')} — upgrade {vuln.get('package', 'dependency')}"
+        pr_body = f"""## Vulnerability Fix
 
 **CVE:** {vuln.get('cve', 'N/A')}
 **Package:** {vuln.get('package', 'unknown')}
@@ -147,17 +167,17 @@ async def run_fix_vulns(
 ## Changes
 {fix_summary}
 """
-            pr_result = subprocess.run(
-                ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
-                cwd=repo_path, capture_output=True, text=True, timeout=30,
-            )
-            if pr_result.returncode == 0:
-                pr_url = pr_result.stdout.strip()
-                print(f"  PR created: {pr_url}")
-            else:
-                print(f"  PR creation failed: {pr_result.stderr}")
+        pr_result = subprocess.run(
+            ["gh", "pr", "create", "--title", pr_title, "--body", pr_body],
+            cwd=repo_path, capture_output=True, text=True, timeout=30,
+        )
+        if pr_result.returncode == 0:
+            pr_url = pr_result.stdout.strip()
+            print(f"  PR created: {pr_url}")
+        else:
+            print(f"  PR creation failed: {pr_result.stderr}")
 
-            repos_processed.add(repo)
+        repos_processed.add(repo)
 
     print("\n" + "=" * 60)
     print(f"Done. Processed {len(repos_processed)} repos, {len(vulns)} vulnerabilities.")

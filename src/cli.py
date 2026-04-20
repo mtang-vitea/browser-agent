@@ -18,9 +18,9 @@ def main():
     run_parser.add_argument("--model", default="claude-sonnet-4-6", help="Claude model to use")
 
     vuln_parser = subparsers.add_parser("fix-vulns", help="Read Slack vuln report and fix vulnerabilities")
+    vuln_parser.add_argument("--repos-dir", required=True, help="Base directory where repos live locally")
     vuln_parser.add_argument("--headless", action="store_true", help="Run browser without GUI")
     vuln_parser.add_argument("--model", default="claude-sonnet-4-6", help="Claude model to use")
-    vuln_parser.add_argument("--org", default=None, help="GitHub org for repos (if not in vuln report)")
 
     args = parser.parse_args()
 
@@ -28,9 +28,9 @@ def main():
         from .tasks.fix_vulns import run_fix_vulns
 
         asyncio.run(run_fix_vulns(
+            repos_dir=args.repos_dir,
             headless=args.headless,
             model=args.model,
-            github_org=args.org,
         ))
     elif args.command == "run":
         from .agent import run
