@@ -18,6 +18,7 @@ This project uses **uv** — not pip, not poetry, not conda.
 - [docs/setup.md](docs/setup.md) — installation and environment setup
 - [docs/architecture.md](docs/architecture.md) — codebase structure, components, design decisions
 - [docs/fix-vulns-task.md](docs/fix-vulns-task.md) — the fix-vulns Slack→code→PR pipeline
+- [docs/adding-a-task.md](docs/adding-a-task.md) — how to add a new task
 
 ## Quick Reference
 

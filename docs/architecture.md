@@ -53,6 +53,8 @@ Entry point with subcommands:
 - `run <task>` — free-form browser automation
 - `fix-vulns` — the vulnerability-fixing pipeline (see [fix-vulns task docs](./fix-vulns-task.md))
 
+To add a new subcommand, see [adding a task](./adding-a-task.md).
+
 ## Design Decisions
 
 - **Headed browser by default** — the user can watch and intervene (pass `--headless` to disable)

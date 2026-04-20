@@ -46,10 +46,13 @@ async def run(
             screenshot_b64 = await browser.screenshot()
 
             if messages[-1]["role"] == "user":
-                messages[-1]["content"] = [
-                    {"type": "text", "text": messages[-1]["content"]}
+                existing = (
+                    [{"type": "text", "text": messages[-1]["content"]}]
                     if isinstance(messages[-1]["content"], str)
-                    else *messages[-1]["content"],
+                    else messages[-1]["content"]
+                )
+                messages[-1]["content"] = [
+                    *existing,
                     {
                         "type": "image",
                         "source": {
