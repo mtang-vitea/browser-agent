@@ -5,9 +5,9 @@ Reads a vulnerability report from Slack, then fixes each vulnerability in-place 
 ## Usage
 
 ```bash
-python -m src.cli fix-vulns --repos-dir ~/Code
-python -m src.cli fix-vulns --repos-dir ~/Code --model claude-sonnet-4-6
-python -m src.cli fix-vulns --repos-dir ~/Code --headless
+uv run python -m src.cli fix-vulns --repos-dir ~/Code
+uv run python -m src.cli fix-vulns --repos-dir ~/Code --model claude-sonnet-4-6
+uv run python -m src.cli fix-vulns --repos-dir ~/Code --headless
 ```
 
 ### Required flags
